@@ -1,0 +1,143 @@
+---
+# tasks file for Backend
+# tasks
+
+- name: Update and upgrade system packages
+  apt:
+    update_cache: yes
+    upgrade: dist
+
+- name: Ensure the /Aws_test directory exists
+  file:
+    path: /Aws_test
+    state: directory
+
+- name: Check if the repository directory exists
+  stat:
+    path: /Aws_test/.git
+  register: repo_stat
+
+- name: Clone the Fundoo app repository if not already cloned
+  git:
+    repo: https://github.com/punithpunii/Devops.git
+    dest: /Aws_test/
+    version: Aws_test
+    update: yes
+  when: not repo_stat.stat.exists
+
+- name: Install required system packages and dependencies
+  apt:
+    name:
+      - python3
+      - python3-pip
+      - python3-dev
+      - libpq-dev
+      - build-essential
+      - python3-venv
+    state: present
+
+- name: Create a group named dev
+  group:
+    name: dev
+    state: present
+
+- name: Create a user named dev
+  user:
+    name: dev
+    state: present
+    create_home: yes
+    shell: /bin/bash
+
+
+- name: Change ownership of /Aws_test to dev:dev recursively
+  file:
+    path: /Aws_test
+    owner: dev
+    group: dev
+    recurse: yes
+    mode: '0755'
+
+- name: Add dev user to sudoers file for systemctl operations
+  lineinfile:
+    path: /etc/sudoers
+    state: present
+    line: "dev ALL=(ALL) NOPASSWD: /bin/systemctl"
+
+- name: Create a Python virtual environment
+  command:
+    cmd: python3 -m venv myenv
+    chdir: /Aws_test/
+
+- name: Activate the virtual environment and install dependencies
+  shell: |
+    sudo su -c "
+    cd /Aws_test/ &&
+    source myenv/bin/activate &&
+    pip install wheel celery django-cors-headers &&
+    pip install -r requirements.txt
+    "
+
+- name: Install Redis server
+  apt:
+    name: redis-server
+    state: present
+
+- name: Start and enable Redis service
+  systemd:
+    name: redis
+    state: started
+    enabled: yes
+
+- name: Ensure /etc/fundoo directory exists
+  file:
+    path: /etc/fundoo
+    state: directory
+    owner: dev
+    group: dev
+    mode: '0755'
+
+- name: Create env.conf file with database configuration
+  template:
+    src: env.conf.j2
+    dest: /etc/fundoo/env.conf
+    owner: dev
+    group: dev
+    mode: '0644'
+
+- name: Run makemigrations
+  shell: |
+    bash -c "source myenv/bin/activate && python3 fundoo_notes/manage.py makemigrations"
+  args:
+    chdir: /Aws_test/
+
+- name: Run migrate
+  shell: |
+    bash -c "source myenv/bin/activate && python3 fundoo_notes/manage.py migrate"
+  args:
+    chdir: /Aws_test/
+
+- name: fundoo service file using template
+  template:
+    src: fundoo.service.j2
+    dest: /etc/systemd/system/fundoo.service
+    mode: '0644'
+  notify: Reload the system, service file
+
+- name: Get fundoo service status
+  systemd:
+    name: fundoo.service
+    state: started
+  register: fundoo_status
+
+- name: Debug fundoo service status
+  debug:
+    msg: "Fundoo service is {{ fundoo_status.status.ActiveState }} and is enabled: {{ fundoo_status.status.UnitFileState }}"
+
+- name: Test if application is running on localhost:8000
+  command: curl http://localhost:8000/home/
+  register: curl_status
+  ignore_errors: yes
+
+- name: Print the curl status of the application
+  debug:
+    msg: "Curl status: {{ curl_status.stdout }}"

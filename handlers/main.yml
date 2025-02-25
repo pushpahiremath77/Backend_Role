@@ -1,0 +1,8 @@
+---
+# handlers file for Backend
+- name: Reload the system, service file
+  command: "sudo systemctl {{ item }}"
+  loop:
+    - daemon-reload
+    - start fundoo.service
+    - enable fundoo.service

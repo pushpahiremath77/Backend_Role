@@ -1,0 +1,14 @@
+[Unit]
+Description=fundoo Service for Fundoo Project
+After=network.target
+
+[Service]
+User= {{ user }}
+Group= {{ group }}
+WorkingDirectory= {{ working_directory}}
+EnvironmentFile= {{ env_file}}
+ExecStart=/bin/bash -c '{{ commands }} {{ bind_address }}'
+Restart = always
+
+[Install]
+WantedBy=multi-user.target
